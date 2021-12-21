@@ -1,0 +1,230 @@
+/*-----------------------------Program_1 for question1:-----------------------------------------*/
+
+/* importing input data */
+proc import datafile='/folders/myfolders/sleep.txt' out=data dbms=dlm;
+delimiter='09'x;
+run;
+/* generating mean,std and percentiles */
+proc univariate data=data;
+   var     TotalSleep;
+   output out=pctls pctlpts=84 95 97.5 99.85 pctlpre=pct84_ pct95_ pct97_5_ pct99_85
+
+mean=totalsleepMean std=totalsleepstd
+;
+run;
+
+/* calculationg mean+std, Mean+2std, Mean+3std */
+data pctls1;
+set pctls;
+mean_sd=sum(totalsleepmean,totalsleepstd);
+mean_2sd=sum(totalsleepmean,2*totalsleepstd);
+mean_3sd=sum(totalsleepmean,3*totalsleepstd);
+run;
+
+proc export data=pctls1 outfile='/folders/myfolders/q1_part1.xls' dbms=xls replace;
+run;
+
+/* Finding outliers */
+proc sort data=data;
+by danger;
+run;
+data data_t;
+set data;
+group='a';
+run;
+
+
+ proc boxplot data=data_t;
+      plot     totalsleep*group/boxstyle = schematicid
+      outbox   = Outliers
+
+      ;
+   run;
+
+ proc boxplot data=data;
+      plot     totalsleep*Danger/boxstyle = schematicid
+      outbox   = oilschematic
+      boxwidthscale=0.5
+      ;
+   run;
+/*  removing outliers   */
+data data_rm_outlier ;
+set oilschematic;
+where lower(_type_) in ('low','high');
+keep _value_;
+run;
+
+proc sql;
+create table data_rm_out_f as
+select * from data where totalsleep not in (select _value_ from data_rm_outlier);
+quit;
+
+/* Generating mean,std and percentiles after removing outliers. */
+proc univariate data=data_rm_out_f;
+   var     TotalSleep;
+   output out=pctls_outliers pctlpts=84 95 97.5 99.85 pctlpre=pct84_ pct95_ pct97_5_ pct99_85
+
+mean=totalsleepMean std=totalsleepstd
+;
+run;
+
+data pctls1_outliers;
+set pctls_outliers;
+mean_sd=sum(totalsleepmean,totalsleepstd);
+mean_2sd=sum(totalsleepmean,2*totalsleepstd);
+mean_3sd=sum(totalsleepmean,3*totalsleepstd);
+run;
+
+
+
+proc export data=pctls1_outliers outfile='/folders/myfolders/q1_part2_rm_outliers.xls' dbms=xls replace;
+run;
+
+
+/*-------------------------------------	Program 2	------------------------------------------------*/
+
+proc import datafile="/folders/myfolders/wage_data.xls" out=w_data dbms=xls;
+run;
+
+/* checking education , age, experience impact on wages */
+PROC sgscatter  DATA=w_data;
+plot age * wage;
+RUN;
+PROC sgscatter  DATA=w_data;
+   PLOT education * wage
+;
+RUN;
+PROC sgscatter  DATA=w_data;
+plot experience * wage;
+RUN;
+
+ods listing gpath='/folders/myfolders/';
+ods graphics / imagename="Q2_s1_output" imagefmt=png;
+
+
+proc corr data=w_data plots=matrix;
+var age education experience;
+with wage;
+run;
+ods html file='/folders/myfolders/q2_s1_outputs.html';
+
+proc corr data=w_data plots=matrix;
+var age education experience;
+with wage;
+run;
+
+ods html close;
+/* q2:  */
+proc means data=w_data ;
+var wage;
+class sex;
+output out=w_data_s2;
+run;
+
+proc export data=w_data_s2 outfile='/folders/myfolders/q2_s2_output.xls' dbms=xls replace;
+run;
+
+
+
+/* comment: male workers code is zero(0), they have high mean so male sex have more salary than female */
+
+
+proc surveyselect data=w_data(keep=education) method=SRS sampsize=5 out=w_sample;
+run;
+ 
+
+proc export data=w_sample outfile='/folders/myfolders/q2_s3_output.xls' dbms=xls replace;
+run;
+
+
+
+
+/*------------------------------ program3-------------------------------------------*/
+
+proc import datafile="/folders/myfolders/Q3_data.xls" out=a_data dbms=xls;
+run;
+
+data a_data_agecoding ;
+set a_data;
+if age>=20 and age<=30 then n_age='20-30';
+else if age>30 and age<=40 then n_age='31-40';
+else if age>40 and age<=50 then n_age='41-50';
+else if age>50 and age<=60 then n_age='51-60';
+else n_age='61+';
+run;
+
+
+
+proc sql;
+create table q1_summary as
+select n_age,gender,marital_status ,count(n_age) as pop_cnt,sum(income) as total_income
+from a_data_agecoding
+group by n_age,gender, marital_status;
+quit;
+
+
+proc export data=q1_summary outfile='/folders/myfolders/q3_s1_output.xls' dbms=xls replace;
+run;
+
+/* q2 */
+%macro mulsheets;
+proc sort data=a_data;
+by education;
+run;
+ods excel options (sheet_interval='bygroup')file="/folders/myfolders/q3_s2_outputnew.xls" ;
+proc report data=a_data;
+by education;
+run;
+ods excel close;
+
+
+%mend;
+%mulsheets
+
+%macro mulsheets;
+proc sort data=a_data;
+by education;
+run;
+ods excel options (sheet_interval='bygroup')file="/folders/myfolders/q3_s2_outputnew.xls" ;
+proc report data=a_data;
+by education;
+run;
+ods excel close;
+
+
+%mend;
+%mulsheets
+
+
+
+/* q3: */
+proc sql;
+select count(distinct education) into : edu_cnt from a_data;
+select distinct  education into : education_1 -: education_%trim(&edu_cnt) from a_data;
+quit;
+%put "&education_1";
+
+
+options mprint;
+%macro mulsheetss;
+
+%do i=1 %to %eval(&edu_cnt);
+
+data exp;
+set a_data;
+edu=put(education,$1.);
+if edu= "&&i.";
+run;
+
+proc export data=exp outfile="/folders/myfolders/Q3_S3_edu_&&i..xls" dbms=xls replace;
+sheet= "&&i.";
+run;
+
+
+%end;
+%mend;
+%mulsheetss
+
+
+;
+
